@@ -22,7 +22,7 @@ COUNTRY_CURRENCY_MAP = {
 # Clean layout built for mobile screens
 st.set_page_config(page_title="ScoreBot", page_icon="🤖", layout="centered")
 
-st.title("🤖 ScoreBot")
+st.title("shopbot")
 st.caption("Your smart, localized budget shopping assistant.")
 st.divider()
 
