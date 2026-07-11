@@ -48,23 +48,25 @@ st.html("""
 
 # --- 🍪 COOKIES & SEARCH LIMITS ---
 cookies = st.context.cookies
-current_searches = int(cookies.get("sb_count", "0"))
+
+# Use session state as a live working buffer so we don't need browser reloads
+if "live_count" not in st.session_state:
+    st.session_state.live_count = int(cookies.get("sb_count", "0"))
+
 reset_time = cookies.get("sb_reset", "")
 current_time = int(time.time())
 
 if reset_time and (current_time - int(reset_time) >= 7 * 24 * 60 * 60):
-    current_searches = 0
+    st.session_state.live_count = 0
     reset_time = str(current_time)
 elif not reset_time:
     reset_time = str(current_time)
 
-searches_left = max(0, 3 - current_searches)
+searches_left = max(0, 3 - st.session_state.live_count)
 
 # --- 📍 AUTOMATIC PHYSICAL IP DETECTION ---
-# Check if we already have the country saved in a browser cookie
 detected_country_name = cookies.get("ip_country_name", "")
 
-# If we don't have it, run a quick client-side IP lookup and save it to a cookie
 if not detected_country_name:
     st.components.v1.html("""
         <script>
@@ -72,16 +74,13 @@ if not detected_country_name:
                 .then(res => res.json())
                 .then(data => {
                     if (data.country_name) {
-                        // Save country to cookie for 30 days
                         document.cookie = "ip_country_name=" + data.country_name + "; max-age=2592000; path=/";
-                        // Instantly reload to apply the default choice
                         window.parent.location.reload();
                     }
                 })
                 .catch(err => console.log("IP lookup failed:", err));
         </script>
     """, height=0)
-    # Temporary fallback while the script reloads
     detected_country_name = "United States"
 
 # --- UI CONTENT PANEL ---
@@ -99,8 +98,6 @@ with st.container(key="main_panel"):
     item = st.text_input("What would you like?", placeholder="e.g., Sony WH-1000XM4")
     
     countries_list = sorted([c.name for c in pycountry.countries])
-    
-    # Set dropdown default to the physically tracked IP country name
     default_idx = countries_list.index(detected_country_name) if detected_country_name in countries_list else 0
     selected_country = st.selectbox("Shipping Country:", countries_list, index=default_idx)
 
@@ -117,11 +114,14 @@ with st.container(key="main_panel"):
         if not item:
             st.warning("Please enter what you want to buy!")
         else:
+            # 1. Advance the counter instantly in memory so the user interface responds immediately
+            st.session_state.live_count += 1
+            
+            # 2. Quietly update the browser cookie in the background without forcing a visual screen refresh
             st.components.v1.html(f"""
                 <script>
-                    document.cookie = "sb_count={current_searches + 1}; max-age=2592000; path=/";
+                    document.cookie = "sb_count={st.session_state.live_count}; max-age=2592000; path=/";
                     document.cookie = "sb_reset={reset_time}; max-age=2592000; path=/";
-                    window.parent.location.reload();
                 </script>
             """, height=0)
 
@@ -149,6 +149,9 @@ with st.container(key="main_panel"):
                 )
                 st.subheader("🎉 Top Picks Found Within Budget:")
                 st.markdown(response.text)
+                
+                # Soft refresh updating only the warning banner count at the very end
+                st.rerun()
 
             except Exception as e:
                 st.error("API link failure. Please verify your backend API Key settings.")
