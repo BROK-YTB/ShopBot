@@ -1,3 +1,2 @@
 streamlit
-pycountry
-google-genai
+streamlit-cookies-controller
