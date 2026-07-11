@@ -30,3 +30,5 @@ with st.container(key="maintenance_panel"):
     st.markdown("### ShopperBot is temporarily offline.")
     st.write("We are currently updating our API connections and polishing the interface to bring you faster, more accurate deal hunting.")
     st.write(" Please check back shortly!")
+    st.write ("Est. end time 3 PM Paris")
+    
