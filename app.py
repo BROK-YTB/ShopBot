@@ -18,49 +18,35 @@ COUNTRY_CURRENCY_MAP = {
 
 st.set_page_config(page_title="ShopperBot", page_icon="🤖", layout="centered")
 
-# --- 🧪 LIQUID GLASS THEME ---
+# --- 🎨 CLEAN MINIMALIST THEME ---
 st.html("""
 <style>
-    .stApp {
-        background: radial-gradient(circle at 50% 50%, #15162c 0%, #05060a 100%) !important;
-    }
-    .st-key-glass_card {
-        background: rgba(255, 255, 255, 0.03) !important;
-        backdrop-filter: blur(16px) saturate(180%) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        border-radius: 16px !important;
-        padding: 24px !important;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37) !important;
-    }
-    input, select, div[data-baseweb="select"] {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        color: white !important;
+    .stApp { background-color: #0e1117 !important; }
+    .st-key-main_panel {
+        background-color: #161a25 !important;
+        border: 1px solid #262730 !important;
         border-radius: 12px !important;
+        padding: 24px !important;
+    }
+    h1, h2, h3, p, span, label { color: #ffffff !important; }
+    input, select, div[data-baseweb="select"] {
+        background-color: #0e1117 !important;
+        border: 1px solid #4a5568 !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
     }
     button[kind="primary"] {
-        background: linear-gradient(90deg, #4f46e5, #06b6d4) !important;
+        background: #0066cc !important;
         border: none !important;
-        box-shadow: 0 4px 15px rgba(6, 182, 212, 0.3) !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
     }
+    button[kind="primary"]:hover { background: #0052a3 !important; }
 </style>
 """)
 
-# --- 📍 AUTOMATIC COUNTRY DETECTION ---
-# Grabs the browser's locale (e.g., "fr-FR", "en-US")
-user_locale = st.context.locale
-detected_cc = "US" # Fallback default
-if user_locale and "-" in user_locale:
-    detected_cc = user_locale.split("-")[1].upper()
-
-# Find full country name matching the code
-try:
-    detected_country_name = pycountry.countries.get(alpha_2=detected_cc).name
-except:
-    detected_country_name = "United States"
-
-# --- 🍪 WEEKLY LIMIT TRACKING ---
+# --- 🍪 COOKIES & SEARCH LIMITS ---
 cookies = st.context.cookies
 current_searches = int(cookies.get("sb_count", "0"))
 reset_time = cookies.get("sb_reset", "")
@@ -74,21 +60,47 @@ elif not reset_time:
 
 searches_left = max(0, 3 - current_searches)
 
-# --- UI CONTENT CONTAINER ---
-with st.container(key="glass_card"):
-    st.title(" 🛒shopperbot🛍️")
-    st.caption("Your premium, free, personal deal hunter.")
+# --- 📍 AUTOMATIC PHYSICAL IP DETECTION ---
+# Check if we already have the country saved in a browser cookie
+detected_country_name = cookies.get("ip_country_name", "")
+
+# If we don't have it, run a quick client-side IP lookup and save it to a cookie
+if not detected_country_name:
+    st.components.v1.html("""
+        <script>
+            fetch('https://ipapi.co/json/')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.country_name) {
+                        // Save country to cookie for 30 days
+                        document.cookie = "ip_country_name=" + data.country_name + "; max-age=2592000; path=/";
+                        // Instantly reload to apply the default choice
+                        window.parent.location.reload();
+                    }
+                })
+                .catch(err => console.log("IP lookup failed:", err));
+        </script>
+    """, height=0)
+    # Temporary fallback while the script reloads
+    detected_country_name = "United States"
+
+# --- UI CONTENT PANEL ---
+with st.container(key="main_panel"):
+    st.title("🤖 ShopperBot")
+    st.caption("Your minimal, clean personal deal hunter.")
     st.divider()
 
     if searches_left > 0:
         st.info(f"⏳ You have **{searches_left}** free searches remaining this week.")
     else:
-        st.error("🚨 You've reached your weekly limit of 3 free searches!")
+        st.error("🚨 Limit reached! 3 free searches utilized this week.")
 
     # Inputs
     item = st.text_input("What would you like?", placeholder="e.g., Sony WH-1000XM4")
     
     countries_list = sorted([c.name for c in pycountry.countries])
+    
+    # Set dropdown default to the physically tracked IP country name
     default_idx = countries_list.index(detected_country_name) if detected_country_name in countries_list else 0
     selected_country = st.selectbox("Shipping Country:", countries_list, index=default_idx)
 
@@ -105,7 +117,6 @@ with st.container(key="glass_card"):
         if not item:
             st.warning("Please enter what you want to buy!")
         else:
-            # Set cookies directly in browser using JavaScript injection
             st.components.v1.html(f"""
                 <script>
                     document.cookie = "sb_count={current_searches + 1}; max-age=2592000; path=/";
@@ -114,7 +125,7 @@ with st.container(key="glass_card"):
                 </script>
             """, height=0)
 
-            st.markdown(":shimmer[ShopperBot is digging through the web indexes for the lowest price...]")
+            st.markdown(":shimmer[ShopperBot is scanning web indexes...]")
             
             try:
                 from google import genai
