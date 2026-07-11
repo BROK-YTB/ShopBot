@@ -1,6 +1,7 @@
 import streamlit as st
 import pycountry
 import time
+import requests  # OpenRouter uses standard web requests
 
 # Supported major country/currency map
 COUNTRY_CURRENCY_MAP = {
@@ -48,21 +49,18 @@ st.html("""
 
 # --- 🍪 COOKIES & SEARCH LIMITS ---
 cookies = st.context.cookies
-
-# Use session state as a live working buffer so we don't need browser reloads
-if "live_count" not in st.session_state:
-    st.session_state.live_count = int(cookies.get("sb_count", "0"))
-
+cookie_count = cookies.get("sb_count", "0")
+current_searches = int(cookie_count)
 reset_time = cookies.get("sb_reset", "")
 current_time = int(time.time())
 
 if reset_time and (current_time - int(reset_time) >= 7 * 24 * 60 * 60):
-    st.session_state.live_count = 0
+    current_searches = 0
     reset_time = str(current_time)
 elif not reset_time:
     reset_time = str(current_time)
 
-searches_left = max(0, 3 - st.session_state.live_count)
+searches_left = max(0, 3 - current_searches)
 
 # --- 📍 AUTOMATIC PHYSICAL IP DETECTION ---
 detected_country_name = cookies.get("ip_country_name", "")
@@ -86,7 +84,7 @@ if not detected_country_name:
 # --- UI CONTENT PANEL ---
 with st.container(key="main_panel"):
     st.title("🤖 ShopperBot")
-    st.caption("Your minimal, clean personal deal hunter.")
+    st.caption("Your clean, OpenRouter-powered deal hunter.")
     st.divider()
 
     if searches_left > 0:
@@ -95,7 +93,7 @@ with st.container(key="main_panel"):
         st.error("🚨 Limit reached! 3 free searches utilized this week.")
 
     # Inputs
-    item = st.text_input("What would you like?", placeholder="e.g., Sony WH-1000XM4")
+    item = st.text_input("What would you like?", placeholder="e.g., Anker USB-C Hub")
     
     countries_list = sorted([c.name for c in pycountry.countries])
     default_idx = countries_list.index(detected_country_name) if detected_country_name in countries_list else 0
@@ -114,44 +112,67 @@ with st.container(key="main_panel"):
         if not item:
             st.warning("Please enter what you want to buy!")
         else:
-            # 1. Advance the counter instantly in memory so the user interface responds immediately
-            st.session_state.live_count += 1
+            status_placeholder = st.empty()
+            status_placeholder.markdown(":shimmer[ShopperBot is crawling OpenRouter networks...]")
             
-            # 2. Quietly update the browser cookie in the background without forcing a visual screen refresh
-            st.components.v1.html(f"""
-                <script>
-                    document.cookie = "sb_count={st.session_state.live_count}; max-age=2592000; path=/";
-                    document.cookie = "sb_reset={reset_time}; max-age=2592000; path=/";
-                </script>
-            """, height=0)
-
-            st.markdown(":shimmer[ShopperBot is scanning web indexes...]")
+            import os
+            api_key = os.environ.get("OPENROUTER_API_KEY")
             
-            try:
-                from google import genai
-                from google.genai import types
+            if not api_key:
+                status_placeholder.empty()
+                st.error("❌ Missing OpenRouter Key! Set `OPENROUTER_API_KEY` in your Streamlit Advanced Dashboard Settings.")
+                st.stop()
                 
-                client = genai.Client()
+            try:
+                # Target OpenRouter's core structural endpoints
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                
                 prompt = f"""
                 You are ShopperBot. The user wants to buy: "{item}".
                 Shipping location: {selected_country}. Strict maximum budget: {budget} {curr['code']} ({curr['symbol']}).
                 Search the internet for options currently available for sale that ship to or are sold in {selected_country}.
                 Filter out anything that exceeds the budget. Provide a breakdown of the top 2-3 choices with direct markdown links.
                 """
-
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        tools=[types.Tool(google_search=types.GoogleSearch())],
-                        temperature=0.3,
-                    )
-                )
-                st.subheader("🎉 Top Picks Found Within Budget:")
-                st.markdown(response.text)
                 
-                # Soft refresh updating only the warning banner count at the very end
-                st.rerun()
+                # Setup payload using OpenRouter's Native Server Tools
+                payload = {
+                    "model": "google/gemini-2.5-flash", # You can also replace this with "openrouter/free"
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    # This tells OpenRouter to run the search server-side automatically!
+                    "tools": [
+                        {"type": "openrouter:web_search"}
+                    ]
+                }
+
+                response = requests.post(url, headers=headers, json=payload)
+                res_data = response.json()
+                
+                status_placeholder.empty()
+                
+                # Check for standard response structures
+                if "choices" in res_data:
+                    output_text = res_data["choices"][0]["message"]["content"]
+                    st.subheader("🎉 Top Picks Found Within Budget:")
+                    st.markdown(output_text)
+                    
+                    # Update tracking cookie safely on success
+                    st.components.v1.html(f"""
+                        <script>
+                            document.cookie = "sb_count={current_searches + 1}; max-age=2592000; path=/";
+                            document.cookie = "sb_reset={reset_time}; max-age=2592000; path=/";
+                        </script>
+                    """, height=0)
+                else:
+                    st.error("⚠️ OpenRouter returned an unexpected response structure.")
+                    st.json(res_data)
 
             except Exception as e:
-                st.error("API link failure. Please verify your backend API Key settings.")
+                status_placeholder.empty()
+                st.error("⚠️ ShopperBot connection failure.")
+                st.info(f"**Error Details:** {e}")
